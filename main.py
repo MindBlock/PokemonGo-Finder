@@ -55,7 +55,8 @@ SESSION.verify = False
 
 global_password = None
 global_token = None
-DEBUG = True
+access_token = None
+DEBUG = False
 VERBOSE_DEBUG = False  # if you want to write raw request/response to the console
 COORDS_LATITUDE = 0
 COORDS_LONGITUDE = 0
@@ -66,6 +67,7 @@ NEXT_LAT = 0
 NEXT_LONG = 0
 auto_refresh = 0
 default_step = 0.001
+api_endpoint = None
 pokemons = {}
 gyms = {}
 pokestops = {}
@@ -79,11 +81,8 @@ origin_lat, origin_lon = None, None
 is_ampm_clock = False
 
 # stuff for in-background search thread
+
 search_thread = None
-
-# Login session
-login_session = None
-
 def memoize(obj):
     cache = obj.cache = {}
 
@@ -100,9 +99,8 @@ def parse_unicode(bytestring):
     return decoded_string
 
 
-def debug(message):
-    if DEBUG:
-        print '[-] {}'.format(message)
+def debug(message):	print '[-] {}'.format(message) 
+    
 
 
 def time_left(ms):
@@ -512,11 +510,8 @@ def get_args():
             vars(namespace)[key] = default_args[key]
         return namespace
 
+@memoize
 def login(args):
-    global login_session
-    if login_session:
-        return login_session
-
     global global_password
     if not global_password:
       if args.password:
@@ -557,8 +552,7 @@ def login(args):
     for curr in profile.profile.currency:
         print '[+] {}: {}'.format(curr.type, curr.amount)
 
-    login_session = api_endpoint, access_token, profile_response
-    return login_session
+    return api_endpoint, access_token, profile_response
 
 def main():
     full_path = os.path.realpath(__file__)
@@ -600,10 +594,7 @@ def main():
 
     ignore = []
     only = []
-    if args.ignore:
-        ignore = [i.lower().strip() for i in args.ignore.split(',')]
-    elif args.only:
-        only = [i.lower().strip() for i in args.only.split(',')]
+    ignore = "Rattata,Raticate,Pidgey,Pidgeotto,Venonat,Zubat,Golbat,Weedle,Kakuna,Caterpie,Metapod,Spearow".split(',')
 
     pos = 1
     x = 0
@@ -613,7 +604,7 @@ def main():
     steplimit2 = steplimit**2
     for step in range(steplimit2):
         #starting at 0 index
-        debug('looping: step {} of {}'.format((step+1), steplimit**2))
+        #debug('looping: step {} of {}'.format((step+1), steplimit**2))
         #debug('steplimit: {} x: {} y: {} pos: {} dx: {} dy {}'.format(steplimit2, x, y, pos, dx, dy))
         # Scan location math
         if -steplimit2 / 2 < x <= steplimit2 / 2 and -steplimit2 / 2 < y <= steplimit2 / 2:
@@ -626,8 +617,8 @@ def main():
         process_step(args, api_endpoint, access_token, profile_response,
                      pokemonsJSON, ignore, only)
 
-        print('Completed: ' + str(
-            ((step+1) + pos * .25 - .25) / (steplimit2) * 100) + '%')
+        #print('Completed: ' + str(
+         #   ((step+1) + pos * .25 - .25) / (steplimit2) * 100) + '%')
 
     global NEXT_LAT, NEXT_LONG
     if (NEXT_LAT and NEXT_LONG and
@@ -644,7 +635,7 @@ def main():
 
 def process_step(args, api_endpoint, access_token, profile_response,
                  pokemonsJSON, ignore, only):
-    print('[+] Searching for Pokemon at location {} {}'.format(FLOAT_LAT, FLOAT_LONG))
+    #print('[+] Searching for Pokemon at location {} {}'.format(FLOAT_LAT, FLOAT_LONG))
     origin = LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)
     step_lat = FLOAT_LAT
     step_long = FLOAT_LONG
@@ -669,7 +660,8 @@ def process_step(args, api_endpoint, access_token, profile_response,
             for cell in hh.cells:
                 for wild in cell.WildPokemon:
                     hash = wild.SpawnPointId;
-                    if hash not in seen.keys() or (seen[hash].TimeTillHiddenMs <= wild.TimeTillHiddenMs):
+                    #print('[+++] pokemon: {}'.format(pokemonsJSON[str(wild.pokemon.PokemonId)]))
+                    if (hash not in seen.keys() or (seen[hash].TimeTillHiddenMs <= wild.TimeTillHiddenMs)) and pokemonsJSON[str(wild.pokemon.PokemonId)] not in ignore:
                         visible.append(wild)
                     seen[hash] = wild.TimeTillHiddenMs
                 if cell.Fort:
@@ -693,10 +685,6 @@ transform_from_wgs_to_gcj(Location(Fort.Latitude, Fort.Longitude))
                                     pokestops[Fort.FortId] = [Fort.Latitude,
                                                               Fort.Longitude, expire_time]
         except AttributeError:
-            # Reset login session if problems happen
-            global login_session, global_token
-            login_session = None
-            global_token = None
             break
 
     for poke in visible:
@@ -725,25 +713,21 @@ transform_from_wgs_to_gcj(Location(Fort.Latitude, Fort.Longitude))
             "name": pokename
         }
 
-        
+        pokemons[poke.SpawnPointId] = pokemon_obj
 
-        
-		#change
-	print "Pokemon :", pokemon_obj
+        print('[+++] pokemon: {}'.format(pokename)) 
+
         if poke.SpawnPointId not in pokemons:
-             pokemons[poke.SpawnPointId] = pokemon_obj
-		     
-             notifier.pokemon_found(pokemon_obj)
-        #change
-		
+            notifier.pokemon_found(pokemon_obj)
+
 def clear_stale_pokemons():
     current_time = time.time()
 
     for pokemon_key in pokemons.keys():
         pokemon = pokemons[pokemon_key]
         if current_time > pokemon['disappear_time']:
-            print "[+] removing stale pokemon %s at %f, %f from list" % (
-                pokemon['name'].encode('utf-8'), pokemon['lat'], pokemon['lng'])
+            print "[---] removing %s" % (
+                pokemon['name'].encode('utf-8'))
             del pokemons[pokemon_key]
 
 
